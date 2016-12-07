@@ -35,10 +35,40 @@ namespace prototypemovieclient
             Console.Write("\n\t");
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.Write("Press a key to select an option: ");
-            ConsoleKeyInfo choice = Console.ReadKey();
             Console.ResetColor();
+            ConsoleKeyInfo choice = Console.ReadKey(true);
 
             return (choice.Key.ToString());
+        }
+
+        public static int NumberInput(List<string> menuTags, int colour, int range)
+        {
+            if (range == 0)                         // zero flag to print and count options if not already displayed
+            {
+                range = menuTags.Count();
+                for (int i = 0; i < range; i++)
+                {
+                    Console.WriteLine("[{0}] {1}", i + 1, menuTags[i]);
+                }
+            }
+            Console.Write("\n\t");
+            Console.ForegroundColor = (ConsoleColor)colour;
+            Console.Write("Press a key to select an option: ");
+            Console.ResetColor();
+
+            // remember that return value is an indexer, so option [1] is index [0]
+            int numTag = 0;
+
+            do
+            {
+                ConsoleKeyInfo choice = Console.ReadKey(true);
+                if (Char.IsNumber(choice.KeyChar))
+                {
+                    Int32.TryParse(choice.KeyChar.ToString(), out numTag);     //safer way of parsing number from string
+                };
+            } while (numTag < 1 || numTag > range);                             // needs to go alphanumeric / hex if over 9 entries TO DO
+
+            return (numTag - 1);
         }
 
         public static string UserInput(string query)
@@ -64,8 +94,10 @@ namespace prototypemovieclient
     class Client
     {
         // GET to list all Cinemas
-        static async Task GetAllCinemasAsync()
+        static async Task<List<string>> GetAllCinemasAsync()
         {
+            List<string> idstring = new List<string>();
+
             try
             {
                 using (HttpClient client = new HttpClient())
@@ -83,12 +115,14 @@ namespace prototypemovieclient
                     {
                         // read result
                         Menu.DisplayBox("Local Cinema Index", 11);
-
+                        int i = 0;
                         var venues = await response.Content.ReadAsAsync<IEnumerable<Cinema>>();
                         foreach (var v in venues)
                         {
-                            Console.Write("Cinema: " + v.Name + " " + v.Website + " " + v.PhoneNumber + " ");
-                            Console.WriteLine(" Screening: " + v.Movies.Title);
+                            i++;
+                            idstring.Add(v.CinemaID);
+                            Console.Write("[" + i + "] " + v.Name + "\t " + v.Website + " \t" + v.PhoneNumber + " ");
+                            Console.WriteLine(" Main screen: " + v.Movies.Title);
                         }
                     }
                     else
@@ -101,6 +135,7 @@ namespace prototypemovieclient
             {
                 Console.WriteLine(e.ToString());
             }
+            return idstring;
         }
 
         // GET to display a single Cinema
@@ -126,8 +161,13 @@ namespace prototypemovieclient
 
                         var v = await response.Content.ReadAsAsync<Cinema>();
 
-                        Console.Write("Cinema: " + v.Name + " " + v.Website + " " + v.PhoneNumber + " ");
-                        Console.WriteLine(" Screening: " + v.Movies.Title);
+                        Console.WriteLine("Cinema:  " + v.Name);
+                        Console.WriteLine("Online booking at  " + v.Website);
+                        Console.WriteLine("Box Office Tel. " + v.PhoneNumber);
+                        Console.WriteLine("Standard Ticket Price:  " + v.TicketPrice);
+                        Console.ForegroundColor = ConsoleColor.DarkCyan;
+                        Console.WriteLine("Main Screen:  " + v.Movies.Title);
+                        Console.ResetColor();
 
                     }
                     else
@@ -142,9 +182,59 @@ namespace prototypemovieclient
             }
         }
 
-        // GET to list all Movies
-        static async Task GetAllMoviesAsync()
+        //GET to find a Cinema id by name or part of name
+        static async Task GetCinemasBySearchAsync(string id)
         {
+            try
+            {
+                using (HttpClient client = new HttpClient())
+                {
+                    client.BaseAddress = new Uri("http://localhost:3692/");                             // base URL for API Controller i.e. RESTFul service
+
+                    // add an Accept header for JSON
+                    client.DefaultRequestHeaders.
+                        Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+                    // GET ../api/Cinemas
+                    // get all venues
+                    HttpResponseMessage response = await client.GetAsync("Cinemas/Search/" + id);                  // async call, await suspends until result available            
+                    if (response.IsSuccessStatusCode)                                                   // 200..299
+                    {
+                        // read result into iterable IEnumerable
+                        Menu.DisplayBox("Cinema Search", 6);
+                        var venues = await response.Content.ReadAsAsync<IEnumerable<Cinema>>();
+
+                        if (venues.Count() != 0)
+                        {
+
+                            foreach (var v in venues)
+                            {
+
+                                Console.WriteLine("Cinema: " + v.Name);
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("No match found");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine(response.StatusCode + " " + response.ReasonPhrase);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }
+        }
+
+        // GET to list all Movies
+        static async Task<List<string>> GetAllMoviesAsync()
+        {
+            List<string> idstring = new List<string>();
+
             try
             {
                 using (HttpClient client = new HttpClient())
@@ -162,13 +252,16 @@ namespace prototypemovieclient
                     {
                         // read result into iterable IEnumerable
                         Menu.DisplayBox("Movies Showing This Week", 6);
+                        int i = 0;
                         var screenings = await response.Content.ReadAsAsync<IEnumerable<Movie>>();
                         foreach (var s in screenings)
                         {
+                            idstring.Add(s.MovieID);
+                            i++;
                             string cert = s.Certification.ToString().Substring("IFCO".Length);
                             string showtime = s.ShowTime.ToString().Remove(5);
-                            Console.Write("Movie: " + s.Title + " " + cert + " " + showtime + " ");
-                            Console.WriteLine(" Now showing at {0} Cinema{1}", s.Cinemas.Count, (s.Cinemas.Count == 1 ? "" : "s"));
+                            Console.Write("[" + i + "] " + s.Title + "\tRating: " + cert + " \tNext screening " + showtime);
+                            Console.WriteLine("\t Now showing at {0} Cinema{1}", s.Cinemas.Count, (s.Cinemas.Count == 1 ? "" : "s"));
                         }
                     }
                     else
@@ -181,6 +274,7 @@ namespace prototypemovieclient
             {
                 Console.WriteLine(e.ToString());
             }
+            return idstring;
         }
 
         // GET to list all Cinemas where a Movie is Showing
@@ -249,7 +343,7 @@ namespace prototypemovieclient
                         Console.WriteLine("\n" + s.Description + " \n");
                         Console.Write("Now showing at {0} Cinema{1}. ", s.Cinemas.Count, (s.Cinemas.Count == 1 ? "" : "s"));
                         Console.WriteLine("Program starts " + showtime + ". Running Time: " + s.RunTime + " mins.");
-                        Console.WriteLine("Today's performance: " + s.MovieNow(s.Genre));
+                        Console.WriteLine("Next performance: "); //+ s.MovieNow(s.Genre));
                     }
                     else
                     {
@@ -267,7 +361,7 @@ namespace prototypemovieclient
         }
 
         // GET to find a movie by genre
-        static async Task GetMoviesByGenreAsync(Genre id)
+        static async Task GetMoviesByGenreAsync(int id)
         {
             try
             {
@@ -279,12 +373,12 @@ namespace prototypemovieclient
                     client.DefaultRequestHeaders.
                         Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-                    string g = ((int)id).ToString();
-                    HttpResponseMessage response = await client.GetAsync("Movies/Genre/" + g);                              
+                    string g = id.ToString();
+                    HttpResponseMessage response = await client.GetAsync("Movies/Genre/" + g);
                     if (response.IsSuccessStatusCode)                                                   // 200..299
                     {
                         // read result into iterable IEnumerable
-                        Menu.DisplayBox("Movies by Genre: " + id.ToString(), 6);                        // also =Enum.GetName(typeof(Genre), g) or 
+                        Menu.DisplayBox("Movies by Genre: " + Enum.GetName(typeof(Genre), id), 6);                        // also =Enum.GetName(typeof(Genre), g) or 
                         var gens = await response.Content.ReadAsAsync<IEnumerable<Movie>>();
                         foreach (var s in gens)
                         {
@@ -306,9 +400,61 @@ namespace prototypemovieclient
             }
         }
 
+        //Get movies by search term on title string
+        static async Task GetMoviesBySearchTermAsync(string id)
+        {
+            try
+            {
+                using (HttpClient client = new HttpClient())
+                {
+                    client.BaseAddress = new Uri("http://localhost:3692/");                             // base URL for API Controller i.e. RESTFul service
+
+                    // add an Accept header for JSON
+                    client.DefaultRequestHeaders.
+                        Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+                    // GET ../api/Movies
+                    // get all movie screenings
+                    HttpResponseMessage response = await client.GetAsync("Movies/Titlesearch/" + id);                  // async call, await suspends until result available            
+                    if (response.IsSuccessStatusCode)                                                   // 200..299
+                    {
+                        // read result into iterable IEnumerable
+                        Menu.DisplayBox("Movie Search", 6);
+                        var screenings = await response.Content.ReadAsAsync<IEnumerable<Movie>>();
+
+                        if (screenings.Count() != 0)
+                        {
+
+                            foreach (var s in screenings)
+                            {
+                                string cert = s.Certification.ToString().Substring("IFCO".Length);
+                                string showtime = s.ShowTime.ToString().Remove(5);
+                                Console.Write("Movie: " + s.Title + "\tRating: " + cert + " \tNext screening " + showtime);
+                                Console.WriteLine("\t Now showing at {0} Cinema{1}", s.Cinemas.Count, (s.Cinemas.Count == 1 ? "" : "s"));
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("No match found");
+                        }
+                    }
+                    else
+                    {
+                        Console.WriteLine(response.StatusCode + " " + response.ReasonPhrase);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }
+        }
+
 
         static void Main()
         {
+            Console.Title = "EAD PROJECT - ISZN, The Movie Listings App";
+
             bool IsUsing = true;
             do
             {
@@ -327,31 +473,39 @@ namespace prototypemovieclient
             {
                 case "C":
                     Console.Clear();
-                    GetAllCinemasAsync().Wait();
+                    List<string> allVenues = await GetAllCinemasAsync();
+                    int venue = Menu.NumberInput(allVenues, 11, allVenues.Count);
+                    Console.Clear();
+                    GetCinemaAsync(allVenues[venue]).Wait();
                     break;
 
                 case "M":
                     Console.Clear();
-                    GetAllMoviesAsync().Wait();
+                    List<string> allMovies = await GetAllMoviesAsync();
+                    int show = Menu.NumberInput(allMovies, 6, allMovies.Count);
+                    Console.Clear();
+                    GetMovieAsync(allMovies[show]).Wait();
                     break;
 
                 case "F":
                     Console.Clear();
                     string cSearch = Menu.UserInput("Please enter a search term for the cinema:");
-                    GetCinemaAsync(cSearch).Wait();
+                    GetCinemasBySearchAsync(cSearch).Wait();
                     break;
 
                 case "S":
                     Console.Clear();
                     string mSearch = Menu.UserInput("Please enter a search term for the movie title:");
-                    GetMovieAsync(mSearch).Wait();
+                    GetMoviesBySearchTermAsync(mSearch).Wait();
                     break;
 
                 case "G":
                     Console.Clear();
-                    string gSearch = Menu.UserInput("Please enter a search term for the movie title:");
-                    Genre gs = (Genre)(Int32.Parse(gSearch));                       // enum input as underlying enumerator - 
-                    GetMoviesByGenreAsync(gs).Wait();                               // GET method will convert to string for uri
+                    Menu.DisplayBox("Movies by genre", 6);
+                    List<string> genres = new List<string> { "Horror", "Comedy", "Fantasy", "Action", "Family", "Romance" };
+                    int gSearch = Menu.NumberInput(genres, 6, 0);
+                    Console.WriteLine("\n\n");
+                    GetMoviesByGenreAsync(gSearch).Wait();
                     break;
 
                 case "X":
